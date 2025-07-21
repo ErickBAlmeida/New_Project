@@ -10,6 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from win10toast import ToastNotifier
+from openpyxl import load_workbook
 
 
 class App:
@@ -18,6 +19,9 @@ class App:
         load_dotenv()
 
         self.notifier = ToastNotifier()
+
+        wb = load_workbook("RJ.xlsx")
+        self.sheet = wb.active
 
         #   Configurar Navegador
         options = Options()        
@@ -62,8 +66,15 @@ class App:
             time.sleep(5)
             raise Exception("Erro ao navegar pelo site") from e
 
-    def getNumPeticao(self, num_peticao):
+    def ponteiro(self):
+        for row in self.sheet.iter_rows(min_row=2, max_col=1):
+            cell_a = row[0]
+            num_peticao = str(cell_a.value).strip()
 
+            yield num_peticao
+
+    def getNumPeticao(self, num_peticao):
+        
         try:
             peticao_str = str(num_peticao)
 
@@ -87,6 +98,7 @@ class App:
             time.sleep(1)
             self.navegador.find_element(By.ID, "fPP:searchProcessos").click()
 
+            time.sleep(1)
             btn_link = WebDriverWait(self.navegador, 10).until(
                 EC.presence_of_element_located((By.XPATH, '/html/body/div[5]/div/div/div/div[2]/form/div[2]/div[2]/table/tbody/tr/td[2]/a'))
             )
@@ -99,7 +111,7 @@ class App:
             print("Erro ao pesquisar petição\n")
             raise      
 
-    def main(self):
+    def getPolo(self):
         
         time.sleep(3)
         abas = self.navegador.window_handles
@@ -107,19 +119,43 @@ class App:
         
         print("Aba Alterada!!")
 
-        self.navegador.find_element(By.XPATH, '//*[@id="navbar"]/ul/li').click()
-        var = self.navegador.find_element(By.XPATH, f'//*[@id="navbar:j_id129"]/li/small/span/span')
+        if os.getenv('NOME_DO_POLO') in self.navegador.page_source:
+            print("POLO ATIVOs")
 
-        if os.getenv('NOME_DO_POLO') in var.text:
-            print("TRUE")
+    def getStatus(self):
 
+        lista = []
+
+        if "arquivado" in self.navegador.page_source:
+            lista.append("arquivado")
+        if "baixado" in self.navegador.page_source:
+            lista.append("baixado")
+        if "setença" in self.navegador.page_source:
+            lista.append("setença")
+        if "suspenso" in self.navegador.page_source:
+            lista.append("suspenso")
+
+        if len(lista) != 0 :
+            print(lista)
         else:
-            print("FALSE")
+            print("NENHUM STATUS ENCONTRADO!!.")
+
+    def fim(self):
+        self.navegador.close()
+
+        abas = self.navegador.window_handles
+        self.navegador.switch_to.window(abas[0])
+
+        self.navegador.find_element(By.ID, "fPP:clearButtonProcessos").click()
+        time.sleep(2)
 
     def run(self):
         self.navegar()
-        self.getNumPeticao("0801948-89.2024.8.19.0068")
-        self.main()
+        for num_peticao in self.ponteiro():
+            self.getNumPeticao(num_peticao)
+            self.getPolo()
+            self.getStatus()
+            self.fim()
 
 try:
     print('incio')
