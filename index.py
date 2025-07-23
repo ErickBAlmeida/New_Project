@@ -2,13 +2,12 @@ import os
 import re
 import time
 
-import pandas as pd
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait
 from win10toast import ToastNotifier
 from openpyxl import load_workbook
 
@@ -20,13 +19,17 @@ class App:
 
         self.notifier = ToastNotifier()
 
-        wb = load_workbook("RJ.xlsx")
-        self.sheet = wb.active
+        self.wb = load_workbook("RJ.xlsx")
+        self.sheet = self.wb.active
+
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
         #   Configurar Navegador
         options = Options()        
         options.add_argument("--start-maximized")
         options.add_argument("--log-level=3")
+        options.add_argument("--disable-logging")
+        options.add_argument("--disable-dev-shm-usage")
         
         self.navegador = webdriver.Chrome()
         self.navegador.get(os.getenv("LINK"))
@@ -70,8 +73,12 @@ class App:
         for row in self.sheet.iter_rows(min_row=2, max_col=1):
             cell_a = row[0]
             num_peticao = str(cell_a.value).strip()
+            self.linha = cell_a.row
 
             yield num_peticao
+
+    def atualizar_xlsx(self, coluna, valor):
+        self.sheet[f"{coluna}{self.linha}"] = valor
 
     def getNumPeticao(self, num_peticao):
         
@@ -104,46 +111,62 @@ class App:
             )
             btn_link.click()
 
-        except Exception as e:
-
+        except:
+            
             self.notifier.show_toast("ERRO", "Erro ao pesquisar por Petição", duration=3)
             time.sleep(5)
             print("Erro ao pesquisar petição\n")
             raise      
 
     def getPolo(self):
-        
-        time.sleep(3)
-        abas = self.navegador.window_handles
-        self.navegador.switch_to.window(abas[1])
-        
-        print("Aba Alterada!!")
+        try:
+            time.sleep(3)
+            abas = self.navegador.window_handles
+            self.navegador.switch_to.window(abas[1])
 
-        if os.getenv('NOME_DO_POLO') in self.navegador.page_source:
-            print("POLO ATIVOs")
+            if os.getenv('NOME_DO_POLO') in self.navegador.page_source:
+                self.atualizar_xlsx("B", "ATIVO")
+                print("\n✅ POLO ATIVO\n")
+                return True
+        
+        except:
+            print("❌ Não foi possível localizar o polo ativo")
+            self.atualizar_xlsx("B", "INATIVO")
+            self.navegador.switch_to.alert.dismiss()
+            return False
 
     def getStatus(self):
 
-        lista = []
+        var = False
 
         if "arquivado" in self.navegador.page_source:
-            lista.append("arquivado")
+            self.atualizar_xlsx("C","ARQUIVADO")
+            print("✅ Caso está ARQUIVADO")
+            var = True
+            
         if "baixado" in self.navegador.page_source:
-            lista.append("baixado")
+            self.atualizar_xlsx("D","BAIXADO")
+            print("✅ Caso está BAIXADO")
+            var = True
+
         if "setença" in self.navegador.page_source:
-            lista.append("setença")
+            self.atualizar_xlsx("E","SENTENÇA")
+            print("✅ Caso está SENTENCIADO")
+            var = True
+
         if "suspenso" in self.navegador.page_source:
-            lista.append("suspenso")
+            self.atualizar_xlsx("F","SUSPENSO")
+            print("✅ Caso está SUSPENSO")
+            var = True
 
-        if len(lista) != 0 :
-            print(lista)
-        else:
-            print("NENHUM STATUS ENCONTRADO!!.")
+        if var == False:
+            print("🟨 NENHUM STATUS ENCONTRADO!!")
 
-    def fim(self):
-        self.navegador.close()
-
+    def fim(self):      
         abas = self.navegador.window_handles
+        if len(abas) > 1:
+            self.navegador.close()
+
         self.navegador.switch_to.window(abas[0])
 
         self.navegador.find_element(By.ID, "fPP:clearButtonProcessos").click()
@@ -151,10 +174,15 @@ class App:
 
     def run(self):
         self.navegar()
+
         for num_peticao in self.ponteiro():
             self.getNumPeticao(num_peticao)
-            self.getPolo()
-            self.getStatus()
+
+            if self.getPolo() == True:
+                self.getStatus()
+
+            self.wb.save("RJ.xlsx")
+            print("\n✅ Alteração Salva!!\n\n")
             self.fim()
 
 try:
